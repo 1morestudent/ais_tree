@@ -1,0 +1,6 @@
+.env
+.env.*
+.claude/
+.DS_Store
+Thumbs.db
+*.swp
