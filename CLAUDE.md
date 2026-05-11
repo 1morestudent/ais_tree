@@ -28,15 +28,17 @@ This architecture was chosen for:
 
 ```
 ais-tree/
-├── index.html      # Everything - HTML, CSS, React app
-├── favicon-64.png
-└── CLAUDE.md       # This file
+├── public/
+│   ├── index.html      # Everything - HTML, CSS, React app
+│   └── favicon-64.png
+├── wrangler.jsonc      # Cloudflare Workers config
+└── CLAUDE.md           # This file
 ```
 
 ## Running Locally
 
 ```bash
-cd ais-tree
+cd ais-tree/public
 python3 -m http.server 8000
 # Open http://localhost:8000
 ```
