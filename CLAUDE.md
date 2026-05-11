@@ -4,6 +4,8 @@
 
 A filterable directory website helping newcomers discover AI safety career pathways - courses, fellowships, advising programs, and other opportunities. Target audience: people in the EA community exploring AI safety careers.
 
+**Live site:** https://fellowship-navigator.nielsdoehring.workers.dev
+
 **Live data source:** Google Sheets CSV published at:
 ```
 https://docs.google.com/spreadsheets/d/e/2PACX-1vQtkO0KybXq6Nh_PT8Q17V-KJD_6y6YDpgAOcru0ddJ3uaW98Eb4vJX2QTI-A1oXvubXcvLtsPnfhjg/pub?gid=0&single=true&output=csv
