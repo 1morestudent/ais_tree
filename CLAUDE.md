@@ -6,9 +6,9 @@ A filterable directory website helping newcomers discover AI safety career pathw
 
 **Live site:** https://fellowship-navigator.nielsdoehring.workers.dev
 
-**Live data source:** Google Sheets CSV published at:
+**Live data source:** Google Sheets CSV exported at:
 ```
-https://docs.google.com/spreadsheets/d/e/2PACX-1vQtkO0KybXq6Nh_PT8Q17V-KJD_6y6YDpgAOcru0ddJ3uaW98Eb4vJX2QTI-A1oXvubXcvLtsPnfhjg/pub?gid=0&single=true&output=csv
+https://docs.google.com/spreadsheets/d/1wrgVNPTMlwagr33sTPv-Ukadx14MBKXauUY1BEBnbBo/export?format=csv&gid=0
 ```
 
 **Editable sheet:** [Google Sheets link - add if needed]
@@ -53,12 +53,16 @@ The CSV has these columns:
 
 | Column | Type | Notes |
 |--------|------|-------|
+| ID | string | Unique row key, e.g. "aisdb_001" |
 | name | string | Program name |
 | organization | string | Org running it |
 | url | string | Link, or "[unclear]" if unknown |
 | description | string | Program summary |
-| career_stage | string | Comma-separated: "Student", "Early career (0-3 yrs)", "Mid-career (3-10 yrs)", "Senior (10+ yrs)" |
-| career_switch | string | "Suitable for switchers", "Designed for switchers", or "Not aimed at switchers" |
+| for_student | boolean | 1 if suitable for students |
+| for_early_career | boolean | 1 if suitable for early career (0-3 yrs) |
+| for_mid_career | boolean | 1 if suitable for mid-career (3-10 yrs) |
+| for_senior | boolean | 1 if suitable for senior (10+ yrs) |
+| for_career_switch | boolean | 1 if suitable for career switchers |
 | track | string | "Technical", "Governance", "Both", or "General" |
 | program_type | string | "Course", "Fellowship", "Advising", "Mentorship", "Bootcamp" |
 | format | string | "Online", "In-person", "Hybrid" |
@@ -69,7 +73,8 @@ The CSV has these columns:
 | cost | number | 0 for free |
 | recompensation | string | Monthly stipend in USD, "0", or "[unclear]" |
 | prerequisites | string | Requirements or "None" |
-| application_status | string | "Open now", "Closed (will reopen)", "No application needed", "[unclear]" |
+| application_status | string | "open", "closed", "no application needed", "[unclear]" (lowercase) |
+| notes_for_claude_during_update | string | Internal field, not displayed |
 | next_deadline | string | Date or "[unclear]" |
 | next_cohort_start | string | Date or "[unclear]" |
 | tags | string | Comma-separated: "Mentorship", "Stipend/funding", "Research output", etc. |
@@ -80,7 +85,7 @@ The CSV has these columns:
 
 ### Multi-select filters (OR within, AND across)
 - **track**: Selecting "Technical" also shows items with track="Both"
-- **career_stage**: Item shows if ANY of its stages match ANY selected
+- **career_stage**: Backed by boolean columns `for_student`, `for_early_career`, `for_mid_career`, `for_senior`. Item shows if ANY selected stage maps to a `1` in the corresponding column.
 - **format**: Strict match
 - **geographic_focus**: "Global" items always show regardless of selection
 

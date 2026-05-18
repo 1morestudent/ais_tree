@@ -51,7 +51,14 @@
         const DURATION_ORDER = ['1-4 weeks', '1-3 months', '3-6 months', '6-12 months', 'Ongoing/variable'];
         const TIME_ORDER = ['<5 hrs/week', '5-10 hrs/week', '10-20 hrs/week', 'Full-time'];
 
-        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQtkO0KybXq6Nh_PT8Q17V-KJD_6y6YDpgAOcru0ddJ3uaW98Eb4vJX2QTI-A1oXvubXcvLtsPnfhjg/pub?gid=0&single=true&output=csv';
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/1wrgVNPTMlwagr33sTPv-Ukadx14MBKXauUY1BEBnbBo/export?format=csv&gid=0';
+
+        const CAREER_STAGE_MAP = {
+            'Student': 'for_student',
+            'Early career (0-3 yrs)': 'for_early_career',
+            'Mid-career (3-10 yrs)': 'for_mid_career',
+            'Senior (10+ yrs)': 'for_senior',
+        };
 
         // Parse CSV text into array of objects
         function parseCSV(text) {
@@ -159,12 +166,18 @@
                                     <span className="text-nord-4">{item.description}</span>
                                 </div>
                             )}
-                            {item.career_stage && (
-                                <div>
-                                    <span className="font-medium text-nord-5">Career Stage: </span>
-                                    <span className="text-nord-4">{item.career_stage}</span>
-                                </div>
-                            )}
+                            {(() => {
+                                const stages = Object.entries(CAREER_STAGE_MAP)
+                                    .filter(([, col]) => item[col] === '1')
+                                    .map(([name]) => name)
+                                    .join(', ');
+                                return stages ? (
+                                    <div>
+                                        <span className="font-medium text-nord-5">Career Stage: </span>
+                                        <span className="text-nord-4">{stages}</span>
+                                    </div>
+                                ) : null;
+                            })()}
                             {item.geographic_focus && (
                                 <div>
                                     <span className="font-medium text-nord-5">Geographic Focus: </span>
@@ -410,15 +423,10 @@
             // Extract unique options from data
             const trackOptions = useMemo(() =>
                 [...new Set(data.map(d => d.track).filter(Boolean))], [data]);
-            const careerStageOptions = useMemo(() => {
-                const stages = new Set();
-                data.forEach(d => {
-                    if (d.career_stage) {
-                        d.career_stage.split(',').forEach(s => stages.add(s.trim()));
-                    }
-                });
-                return [...stages];
-            }, [data]);
+            const careerStageOptions = useMemo(() =>
+                Object.keys(CAREER_STAGE_MAP).filter(stage =>
+                    data.some(d => d[CAREER_STAGE_MAP[stage]] === '1')
+                ), [data]);
             const formatOptions = useMemo(() =>
                 [...new Set(data.map(d => d.format).filter(Boolean))], [data]);
             const programTypeOptions = useMemo(() =>
@@ -465,7 +473,7 @@
                         showNoPreference: false
                     },
                     {
-                        question: "Are you coming from a different background and looking for a career switch?",
+                        question: "Do you want to see programs targeted at people switching into AI safety from another field?",
                         options: ['Yes', 'No'],
                         filter: careerSwitchSelection,
                         setFilter: (val) => {
@@ -493,7 +501,7 @@
                         filter: applicationStatusSelection,
                         setFilter: (val) => {
                             setApplicationStatusSelection(val);
-                            setApplicationStatusFilter(val === 'Yes' ? ['Open now'] : []);
+                            setApplicationStatusFilter(val === 'Yes' ? ['open'] : []);
                         },
                         isMulti: false,
                         isUpperBound: false
@@ -538,8 +546,9 @@
                     }
 
                     if (careerStageFilter.length > 0) {
-                        const itemStages = (item.career_stage || '').split(',').map(s => s.trim());
-                        const matches = careerStageFilter.some(f => itemStages.includes(f));
+                        const matches = careerStageFilter.some(stage =>
+                            item[CAREER_STAGE_MAP[stage]] === '1'
+                        );
                         if (!matches) return false;
                     }
 
@@ -574,9 +583,7 @@
                     }
 
                     if (careerSwitchFilter) {
-                        if (!item.career_switch || !item.career_switch.toLowerCase().includes('switcher')) {
-                            return false;
-                        }
+                        if (item.for_career_switch !== '1') return false;
                     }
 
                     return true;
@@ -806,7 +813,7 @@
                                                     onChange={(e) => setCareerSwitchFilter(e.target.checked)}
                                                     className="w-4 h-4 rounded border-nord-3 bg-nord-2 text-nord-14 focus:ring-nord-14"
                                                 />
-                                                <span className="text-sm text-nord-4">Focused on career switchers</span>
+                                                <span className="text-sm text-nord-4">Programs for career switchers</span>
                                             </label>
                                         </div>
 
