@@ -1,5 +1,9 @@
 # AI Safety Resources Directory
 
+## Wrap-up Protocol
+
+When the user says "wrap up": check if any changes need to be documented (update this file or README if schema/behavior changed), then commit all changes and push to `main` (which auto-deploys).
+
 ## Project Overview
 
 A filterable directory website helping newcomers discover AI safety career pathways - courses, fellowships, advising programs, and other opportunities. Target audience: people in the EA community exploring AI safety careers.
@@ -53,7 +57,7 @@ The CSV has these columns:
 
 | Column | Type | Notes |
 |--------|------|-------|
-| ID | string | Unique row key, e.g. "aisdb_001" |
+| ID | string | Unique row key, e.g. "aisdb_001". Variants of the same program share a numeric base and differ only by a trailing letter: "aisdb_001a" / "aisdb_001b". The app auto-groups these and shows each variant's sibling(s) with a diff note in the expanded card view. |
 | name | string | Program name |
 | organization | string | Org running it |
 | url | string | Link, or "[unclear]" if unknown |
@@ -63,17 +67,17 @@ The CSV has these columns:
 | for_mid_career | boolean | 1 if suitable for mid-career (3-10 yrs) |
 | for_senior | boolean | 1 if suitable for senior (10+ yrs) |
 | for_career_switch | boolean | 1 if suitable for career switchers |
-| track | string | "Technical", "Governance", "Both", or "General" |
+| track | string | "Technical", "Governance", "Neutral" (covers both/neither), or "General" |
 | program_type | string | "Course", "Fellowship", "Advising", "Mentorship", "Bootcamp" |
 | format | string | "Online", "In-person", "Hybrid" |
 | pacing | string | "Cohort-based", "Rolling", "Self-paced" |
 | geographic_focus | string | "Global", "US-centric", "UK/EU-centric" |
-| duration | string | "1-4 weeks", "1-3 months", "3-6 months", "6-12 months", "Ongoing/variable" |
-| time_commitment | string | "<5 hrs/week", "5-10 hrs/week", "10-20 hrs/week", "Full-time" |
+| duration | number | Duration in weeks (integer). App normalizes to: ≤4w→"1-4 weeks", 5-13w→"1-3 months", 14-26w→"3-6 months", >26w→"6-12 months". "[unclear]" passed through. |
+| time_commitment | number | Hours per week (integer). App normalizes to: <5→"<5 hrs/week", 5-10→"5-10 hrs/week", 11-20→"10-20 hrs/week", >20→"Full-time". "[unclear]" passed through. |
 | cost | number | 0 for free |
 | recompensation | string | Monthly stipend in USD, "0", or "[unclear]" |
 | prerequisites | string | Requirements or "None" |
-| application_status | string | "open", "closed", "no application needed", "[unclear]" (lowercase) |
+| application_status | string | "open", "closed", "rolling", "[unclear]" (lowercase) |
 | notes_for_claude_during_update | string | Internal field, not displayed |
 | next_deadline | string | Date or "[unclear]" |
 | next_cohort_start | string | Date or "[unclear]" |
@@ -84,7 +88,7 @@ The CSV has these columns:
 ## Filter Logic
 
 ### Multi-select filters (OR within, AND across)
-- **track**: Selecting "Technical" also shows items with track="Both"
+- **track**: Selecting "Technical" or "Governance" also shows items with track="Both" or track="Neutral"
 - **career_stage**: Backed by boolean columns `for_student`, `for_early_career`, `for_mid_career`, `for_senior`. Item shows if ANY selected stage maps to a `1` in the corresponding column.
 - **format**: Strict match
 - **geographic_focus**: "Global" items always show regardless of selection

@@ -39,6 +39,11 @@
     </script>
     <style>
         body { background-color: #2E3440; }
+        input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; pointer-events: none; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background-color: #88C0D0; pointer-events: all; cursor: pointer; margin-top: -7px; border: 2px solid #3B4252; }
+        input[type=range]::-moz-range-thumb { height: 18px; width: 18px; border-radius: 50%; background-color: #88C0D0; pointer-events: all; cursor: pointer; border: 2px solid #3B4252; box-shadow: none; }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: transparent; }
+        input[type=range]::-moz-range-track { height: 4px; background: transparent; }
     </style>
 </head>
 <body class="bg-nord-0 min-h-screen text-nord-4">
@@ -46,10 +51,6 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
-
-        // Constants for ordered filters
-        const DURATION_ORDER = ['1-4 weeks', '1-3 months', '3-6 months', '6-12 months', 'Ongoing/variable'];
-        const TIME_ORDER = ['<5 hrs/week', '5-10 hrs/week', '10-20 hrs/week', 'Full-time'];
 
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/1wrgVNPTMlwagr33sTPv-Ukadx14MBKXauUY1BEBnbBo/export?format=csv&gid=0';
 
@@ -102,8 +103,56 @@
             return result;
         }
 
+        function fmtDuration(val) {
+            const w = parseInt(val, 10);
+            if (isNaN(w)) return val;
+            return w === 1 ? '1 week' : `${w} weeks`;
+        }
+
+        function fmtTime(val) {
+            const h = parseInt(val, 10);
+            if (isNaN(h)) return val;
+            return `${h} hrs/wk`;
+        }
+
+        // Strip trailing variant letter only when directly preceded by a digit (e.g. aisdb_001a → aisdb_001)
+        function getBaseId(id) {
+            if (!id) return id;
+            return id.replace(/(\d)[a-z]$/, '$1');
+        }
+
+        // Fields compared between variants to surface differences
+        const COMPARE_FIELDS = [
+            { key: 'format', label: 'Format' },
+            { key: 'duration', label: 'Duration', fmt: fmtDuration },
+            { key: 'time_commitment', label: 'Time/week', fmt: fmtTime },
+            { key: 'pacing', label: 'Pacing' },
+            { key: 'track', label: 'Track' },
+            { key: 'geographic_focus', label: 'Geographic focus' },
+            { key: 'cost', label: 'Cost' },
+            { key: 'recompensation', label: 'Compensation' },
+            { key: 'prerequisites', label: 'Prerequisites' },
+            { key: 'for_student', label: 'For students', isBool: true },
+            { key: 'for_early_career', label: 'For early career', isBool: true },
+            { key: 'for_mid_career', label: 'For mid-career', isBool: true },
+            { key: 'for_senior', label: 'For senior', isBool: true },
+            { key: 'for_career_switch', label: 'For career switchers', isBool: true },
+        ];
+
+        function computeDiffs(itemA, itemB) {
+            return COMPARE_FIELDS
+                .filter(f => (itemA[f.key] || '') !== (itemB[f.key] || ''))
+                .map(f => {
+                    const fmt = f.isBool
+                        ? (v => v === '1' ? 'Yes' : 'No')
+                        : (f.fmt || (v => v || '—'));
+                    return `${f.label}: ${fmt(itemB[f.key])}`;
+                });
+        }
+
         // Track badge component
         function TrackBadge({ track }) {
+            if (!track || track === 'Neutral') return null;
             const colors = {
                 'Technical': 'bg-[#B48EAD] text-nord-0',
                 'Governance': 'bg-[#EBCB8B] text-nord-0',
@@ -112,13 +161,13 @@
             };
             return (
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[track] || colors['General']}`}>
-                    {track || 'General'}
+                    {track}
                 </span>
             );
         }
 
         // Resource card component
-        function ResourceCard({ item }) {
+        function ResourceCard({ item, siblings }) {
             const [expanded, setExpanded] = useState(false);
 
             return (
@@ -129,13 +178,18 @@
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <h3 className="font-semibold text-nord-6">{item.name}</h3>
                                     <TrackBadge track={item.track} />
+                                    {siblings && siblings.length > 0 && (
+                                        <span className="text-xs text-nord-4 border border-nord-3 px-2 py-0.5 rounded-full">
+                                            {siblings.length + 1} variants
+                                        </span>
+                                    )}
                                 </div>
                                 <p className="text-sm text-nord-4 mt-1">{item.organization}</p>
                             </div>
                             <div className="text-right text-sm text-nord-4">
                                 <div>{item.format}</div>
-                                <div>{item.duration}</div>
-                                <div>{item.time_commitment}</div>
+                                <div>{fmtDuration(item.duration)}</div>
+                                <div>{fmtTime(item.time_commitment)}</div>
                             </div>
                         </div>
                         <div className="mt-3 flex items-center justify-between">
@@ -202,12 +256,6 @@
                                     <span className="text-nord-4">{item.recompensation}</span>
                                 </div>
                             )}
-                            {item.notes && (
-                                <div>
-                                    <span className="font-medium text-nord-5">Notes: </span>
-                                    <span className="text-nord-4">{item.notes}</span>
-                                </div>
-                            )}
                             {item.url && item.url !== '[unclear]' && (
                                 <div>
                                     <a
@@ -219,6 +267,26 @@
                                     >
                                         Visit Program →
                                     </a>
+                                </div>
+                            )}
+                            {siblings && siblings.length > 0 && (
+                                <div className="mt-3 p-3 bg-nord-0 rounded-lg border border-nord-3">
+                                    <p className="font-medium text-nord-5 text-sm mb-2">
+                                        {siblings.length === 1 ? 'Related variant:' : 'Related variants:'}
+                                    </p>
+                                    {siblings.map(sibling => {
+                                        const diffs = computeDiffs(item, sibling);
+                                        return (
+                                            <div key={sibling.ID} className="mb-2 last:mb-0">
+                                                <span className="text-nord-6 text-sm font-medium">{sibling.name}</span>
+                                                {diffs.length > 0 && (
+                                                    <p className="text-xs text-nord-4 mt-0.5">
+                                                        Differs in: {diffs.join(' · ')}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -259,42 +327,41 @@
             );
         }
 
-        // Upper bound filter component
-        function UpperBoundFilter({ label, options, selected, onChange }) {
+        // Dual-handle range slider
+        function RangeSlider({ min, max, value, onChange, formatValue }) {
+            const [lo, hi] = value;
+            const loPercent = max > min ? ((lo - min) / (max - min)) * 100 : 0;
+            const hiPercent = max > min ? ((hi - min) / (max - min)) * 100 : 100;
+
             return (
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-nord-5 mb-2">{label}</label>
-                    <div className="flex flex-wrap gap-2">
-                        {options.map(option => (
-                            <button
-                                key={option}
-                                onClick={() => onChange(selected === option ? null : option)}
-                                className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                                    selected === option
-                                        ? 'bg-nord-14 text-nord-0'
-                                        : 'bg-nord-2 text-nord-4 hover:bg-nord-3'
-                                }`}
-                            >
-                                ≤ {option}
-                            </button>
-                        ))}
+                <div>
+                    <div className="flex justify-between text-xs text-nord-4 mb-3">
+                        <span>{formatValue(lo)}</span>
+                        <span>{formatValue(hi)}</span>
+                    </div>
+                    <div className="relative h-5 flex items-center">
+                        <div className="absolute w-full h-1 bg-nord-3 rounded-full"></div>
+                        <div
+                            className="absolute h-1 bg-nord-8 rounded-full"
+                            style={{ left: `${loPercent}%`, right: `${100 - hiPercent}%` }}
+                        ></div>
+                        <input
+                            type="range" min={min} max={max} value={lo}
+                            onChange={e => onChange([Math.min(+e.target.value, hi), hi])}
+                            className="absolute w-full"
+                        />
+                        <input
+                            type="range" min={min} max={max} value={hi}
+                            onChange={e => onChange([lo, Math.max(+e.target.value, lo)])}
+                            className="absolute w-full"
+                        />
                     </div>
                 </div>
             );
         }
 
-        // Helper to format duration labels (e.g., "1-3 months" -> "3 months")
-        function formatDurationLabel(duration) {
-            const match = duration.match(/(\d+)-(\d+)\s*(\w+)/);
-            if (match) {
-                return `${match[2]} ${match[3]}`;
-            }
-            if (duration === 'Ongoing/variable') return 'Ongoing';
-            return duration;
-        }
-
         // Single question component (used within groups)
-        function QuestionBlock({ question, options, selected, onSelect, onClear, isMulti = true, isUpperBound = false, showNoPreference = true }) {
+        function QuestionBlock({ question, options, selected, onSelect, onClear, isMulti = true, showNoPreference = true }) {
             const hasSelection = isMulti ? selected.length > 0 : selected !== null;
 
             return (
@@ -302,10 +369,7 @@
                     <h3 className="text-xl font-bold text-nord-6 mb-4">{question}</h3>
                     <div className="flex flex-wrap justify-center items-center gap-3">
                         {options.map(option => {
-                            const isSelected = isMulti
-                                ? selected.includes(option)
-                                : selected === option;
-                            const displayLabel = isUpperBound ? formatDurationLabel(option) : option;
+                            const isSelected = isMulti ? selected.includes(option) : selected === option;
                             return (
                                 <button
                                     key={option}
@@ -316,20 +380,18 @@
                                             : 'bg-nord-1 text-nord-4 border border-nord-3 hover:border-nord-8 hover:shadow'
                                     }`}
                                 >
-                                    {isUpperBound ? `≤ ${displayLabel}` : displayLabel}
+                                    {option}
                                 </button>
                             );
                         })}
                         {showNoPreference && (
                             <>
-                                {/* Vertical separator */}
                                 <div className="w-px h-8 bg-nord-3 mx-1"></div>
-                                {/* No preference button */}
                                 <button
                                     onClick={onClear}
                                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                                         !hasSelection
-                                            ? 'bg-nord-3 text-nord-6 shadow-md'
+                                            ? 'bg-nord-8 text-nord-0 shadow-md scale-105'
                                             : 'bg-nord-1 text-nord-4 border border-nord-3 hover:border-nord-8 hover:shadow'
                                     }`}
                                 >
@@ -342,22 +404,60 @@
             );
         }
 
+        // Range slider question for the questionnaire
+        function RangeSliderQuestion({ question, min, max, range, onChange, formatValue }) {
+            if (!range || max === 0) return null;
+            const isAtDefault = range[0] === min && range[1] === max;
+            return (
+                <div className="mb-8">
+                    <h3 className="text-xl font-bold text-nord-6 mb-6">{question}</h3>
+                    <div className="max-w-sm mx-auto mb-2">
+                        <RangeSlider min={min} max={max} value={range} onChange={onChange} formatValue={formatValue} />
+                    </div>
+                    <div className="flex justify-center items-center gap-3 mt-6">
+                        <div className="w-px h-8 bg-nord-3 mx-1"></div>
+                        <button
+                            onClick={() => onChange([min, max])}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                isAtDefault
+                                    ? 'bg-nord-8 text-nord-0 shadow-md scale-105'
+                                    : 'bg-nord-1 text-nord-4 border border-nord-3 hover:border-nord-8 hover:shadow'
+                            }`}
+                        >
+                            No preference
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         // Grouped questionnaire step component
         function QuestionGroupStep({ questions, onSelectFor, onClearFor, onNext, onBack, canGoBack, matchCount, totalCount }) {
             return (
                 <div className="max-w-2xl mx-auto text-center">
                     {questions.map((q, idx) => (
-                        <QuestionBlock
-                            key={idx}
-                            question={q.question}
-                            options={q.options}
-                            selected={q.filter}
-                            onSelect={(option) => onSelectFor(idx, option)}
-                            onClear={() => onClearFor(idx)}
-                            isMulti={q.isMulti}
-                            isUpperBound={q.isUpperBound}
-                            showNoPreference={q.showNoPreference !== false}
-                        />
+                        q.isRangeSlider ? (
+                            <RangeSliderQuestion
+                                key={idx}
+                                question={q.question}
+                                min={q.sliderMin}
+                                max={q.sliderMax}
+                                range={q.filter}
+                                onChange={q.setFilter}
+                                formatValue={q.formatValue}
+                            />
+                        ) : (
+                            <QuestionBlock
+                                key={idx}
+                                question={q.question}
+                                options={q.options}
+                                selected={q.filter}
+                                onSelect={(option) => onSelectFor(idx, option)}
+                                onClear={() => onClearFor(idx)}
+                                isMulti={q.isMulti}
+                                showNoPreference={q.showNoPreference !== false}
+                            />
+                        )
                     ))}
                     <p className="text-nord-4 mb-4">
                         <span className="font-semibold text-nord-6">{matchCount}</span> of {totalCount} programs match
@@ -397,8 +497,8 @@
             const [careerStageFilter, setCareerStageFilter] = useState([]);
             const [formatFilter, setFormatFilter] = useState([]);
             const [programTypeFilter, setProgramTypeFilter] = useState([]);
-            const [durationFilter, setDurationFilter] = useState(null);
-            const [timeFilter, setTimeFilter] = useState(null);
+            const [durationRange, setDurationRange] = useState([0, 0]);
+            const [timeRange, setTimeRange] = useState([0, 0]);
             const [geographicFilter, setGeographicFilter] = useState([]);
             const [applicationStatusFilter, setApplicationStatusFilter] = useState([]);
             const [applicationStatusSelection, setApplicationStatusSelection] = useState(null);
@@ -420,6 +520,25 @@
                     });
             }, []);
 
+            // Map each item ID to its variant siblings (items sharing the same base ID)
+            const siblingsMap = useMemo(() => {
+                const byBase = {};
+                data.forEach(item => {
+                    const base = getBaseId(item.ID);
+                    if (!byBase[base]) byBase[base] = [];
+                    byBase[base].push(item);
+                });
+                const map = {};
+                data.forEach(item => {
+                    const base = getBaseId(item.ID);
+                    const group = byBase[base];
+                    if (group.length > 1) {
+                        map[item.ID] = group.filter(s => s.ID !== item.ID);
+                    }
+                });
+                return map;
+            }, [data]);
+
             // Extract unique options from data
             const trackOptions = useMemo(() =>
                 [...new Set(data.map(d => d.track).filter(Boolean))], [data]);
@@ -431,14 +550,23 @@
                 [...new Set(data.map(d => d.format).filter(Boolean))], [data]);
             const programTypeOptions = useMemo(() =>
                 [...new Set(data.map(d => d.program_type).filter(Boolean))], [data]);
-            const durationOptions = useMemo(() =>
-                DURATION_ORDER.filter(d => data.some(item => item.duration === d)), [data]);
-            const timeOptions = useMemo(() =>
-                TIME_ORDER.filter(t => data.some(item => item.time_commitment === t)), [data]);
             const geographicOptions = useMemo(() =>
                 [...new Set(data.map(d => d.geographic_focus).filter(Boolean))], [data]);
             const applicationStatusOptions = useMemo(() =>
                 [...new Set(data.map(d => d.application_status).filter(Boolean))], [data]);
+
+            const durationMax = useMemo(() => {
+                const vals = data.map(d => parseInt(d.duration, 10)).filter(v => !isNaN(v));
+                return vals.length ? Math.max(...vals) : 0;
+            }, [data]);
+            const timeMax = useMemo(() => {
+                const vals = data.map(d => parseInt(d.time_commitment, 10)).filter(v => !isNaN(v));
+                return vals.length ? Math.max(...vals) : 0;
+            }, [data]);
+
+            // Initialize slider ranges once data loads
+            useEffect(() => { if (durationMax > 0) setDurationRange([0, durationMax]); }, [durationMax]);
+            useEffect(() => { if (timeMax > 0) setTimeRange([0, timeMax]); }, [timeMax]);
 
             // Questionnaire question groups
             const questionGroups = [
@@ -450,7 +578,6 @@
                         filter: trackFilter,
                         setFilter: setTrackFilter,
                         isMulti: true,
-                        isUpperBound: false
                     },
                     {
                         question: "What's your geographic preference?",
@@ -458,7 +585,6 @@
                         filter: geographicFilter,
                         setFilter: setGeographicFilter,
                         isMulti: true,
-                        isUpperBound: false
                     }
                 ],
                 // Group 2: Career stage + Career switch
@@ -469,7 +595,6 @@
                         filter: careerStageFilter,
                         setFilter: setCareerStageFilter,
                         isMulti: true,
-                        isUpperBound: false,
                         showNoPreference: false
                     },
                     {
@@ -481,7 +606,6 @@
                             setCareerSwitchFilter(val === 'Yes');
                         },
                         isMulti: false,
-                        isUpperBound: false,
                         showNoPreference: false
                     }
                 ],
@@ -493,7 +617,6 @@
                         filter: formatFilter,
                         setFilter: setFormatFilter,
                         isMulti: true,
-                        isUpperBound: false
                     },
                     {
                         question: "Show only programs that start soon?",
@@ -501,36 +624,37 @@
                         filter: applicationStatusSelection,
                         setFilter: (val) => {
                             setApplicationStatusSelection(val);
-                            setApplicationStatusFilter(val === 'Yes' ? ['open'] : []);
+                            setApplicationStatusFilter(val === 'Yes' ? ['open', 'rolling'] : []);
                         },
                         isMulti: false,
-                        isUpperBound: false
                     }
                 ],
-                // Group 4: Time commitment + Duration
+                // Group 4: Time commitment + Duration (range sliders)
                 [
                     {
-                        question: "How much time can you commit?",
-                        options: timeOptions,
-                        filter: timeFilter,
-                        setFilter: setTimeFilter,
-                        isMulti: false,
-                        isUpperBound: true
+                        question: "How much time can you commit per week?",
+                        isRangeSlider: true,
+                        filter: timeRange,
+                        setFilter: setTimeRange,
+                        sliderMin: 0,
+                        sliderMax: timeMax,
+                        formatValue: (v) => v === 0 ? '0' : `${v} hrs/wk`,
                     },
                     {
-                        question: "What's the maximum duration you're looking for?",
-                        options: durationOptions,
-                        filter: durationFilter,
-                        setFilter: setDurationFilter,
-                        isMulti: false,
-                        isUpperBound: true
+                        question: "What duration range are you looking for?",
+                        isRangeSlider: true,
+                        filter: durationRange,
+                        setFilter: setDurationRange,
+                        sliderMin: 0,
+                        sliderMax: durationMax,
+                        formatValue: (v) => v === 0 ? '0' : v === 1 ? '1 week' : `${v} weeks`,
                     }
                 ]
             ];
 
-            // Filter out groups where all questions have no options
+            // Filter out groups where all questions have no options / zero max
             const activeGroups = questionGroups.map(group =>
-                group.filter(q => q.options.length > 0)
+                group.filter(q => q.isRangeSlider ? q.sliderMax > 0 : q.options.length > 0)
             ).filter(group => group.length > 0);
 
             // Filter logic
@@ -540,7 +664,7 @@
                         const itemTrack = item.track || '';
                         const matches = trackFilter.some(t =>
                             itemTrack === t ||
-                            (itemTrack === 'Both' && (t === 'Technical' || t === 'Governance'))
+                            ((itemTrack === 'Both' || itemTrack === 'Neutral') && (t === 'Technical' || t === 'Governance'))
                         );
                         if (!matches) return false;
                     }
@@ -560,16 +684,14 @@
                         if (!programTypeFilter.includes(item.program_type)) return false;
                     }
 
-                    if (durationFilter) {
-                        const maxIdx = DURATION_ORDER.indexOf(durationFilter);
-                        const itemIdx = DURATION_ORDER.indexOf(item.duration);
-                        if (itemIdx === -1 || itemIdx > maxIdx) return false;
+                    if (durationMax > 0 && (durationRange[0] > 0 || durationRange[1] < durationMax)) {
+                        const w = parseInt(item.duration, 10);
+                        if (isNaN(w) || w < durationRange[0] || w > durationRange[1]) return false;
                     }
 
-                    if (timeFilter) {
-                        const maxIdx = TIME_ORDER.indexOf(timeFilter);
-                        const itemIdx = TIME_ORDER.indexOf(item.time_commitment);
-                        if (itemIdx === -1 || itemIdx > maxIdx) return false;
+                    if (timeMax > 0 && (timeRange[0] > 0 || timeRange[1] < timeMax)) {
+                        const h = parseInt(item.time_commitment, 10);
+                        if (isNaN(h) || h < timeRange[0] || h > timeRange[1]) return false;
                     }
 
                     if (geographicFilter.length > 0) {
@@ -588,15 +710,15 @@
 
                     return true;
                 });
-            }, [data, trackFilter, careerStageFilter, formatFilter, programTypeFilter, durationFilter, timeFilter, geographicFilter, applicationStatusFilter, careerSwitchFilter]);
+            }, [data, trackFilter, careerStageFilter, formatFilter, programTypeFilter, durationRange, timeRange, durationMax, timeMax, geographicFilter, applicationStatusFilter, careerSwitchFilter]);
 
             const clearFilters = () => {
                 setTrackFilter([]);
                 setCareerStageFilter([]);
                 setFormatFilter([]);
                 setProgramTypeFilter([]);
-                setDurationFilter(null);
-                setTimeFilter(null);
+                setDurationRange([0, durationMax]);
+                setTimeRange([0, timeMax]);
                 setGeographicFilter([]);
                 setApplicationStatusFilter([]);
                 setApplicationStatusSelection(null);
@@ -606,8 +728,9 @@
 
             const hasActiveFilters = trackFilter.length > 0 || careerStageFilter.length > 0 ||
                 formatFilter.length > 0 || programTypeFilter.length > 0 ||
-                durationFilter || timeFilter || geographicFilter.length > 0 ||
-                applicationStatusFilter.length > 0 || careerSwitchFilter;
+                (durationMax > 0 && (durationRange[0] > 0 || durationRange[1] < durationMax)) ||
+                (timeMax > 0 && (timeRange[0] > 0 || timeRange[1] < timeMax)) ||
+                geographicFilter.length > 0 || applicationStatusFilter.length > 0 || careerSwitchFilter;
 
             const handleQuestionSelect = (questionIdx, option) => {
                 const q = activeGroups[currentQuestion][questionIdx];
@@ -618,7 +741,6 @@
                         q.setFilter([...q.filter, option]);
                     }
                 } else {
-                    // For single-select (upper bound), toggle off if same
                     q.setFilter(q.filter === option ? null : option);
                 }
             };
@@ -787,22 +909,38 @@
                                             onChange={setApplicationStatusFilter}
                                         />
 
-                                        {durationOptions.length > 0 && (
-                                            <UpperBoundFilter
-                                                label="Max Duration"
-                                                options={durationOptions}
-                                                selected={durationFilter}
-                                                onChange={setDurationFilter}
-                                            />
+                                        {durationMax > 0 && (
+                                            <div className="mb-4">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-sm font-medium text-nord-5">Duration (weeks)</label>
+                                                    {(durationRange[0] > 0 || durationRange[1] < durationMax) && (
+                                                        <button onClick={() => setDurationRange([0, durationMax])} className="text-xs text-nord-8 hover:underline">Reset</button>
+                                                    )}
+                                                </div>
+                                                <RangeSlider
+                                                    min={0} max={durationMax}
+                                                    value={durationRange}
+                                                    onChange={setDurationRange}
+                                                    formatValue={v => v === 0 ? '0' : v === 1 ? '1 wk' : `${v} wks`}
+                                                />
+                                            </div>
                                         )}
 
-                                        {timeOptions.length > 0 && (
-                                            <UpperBoundFilter
-                                                label="Max Time Commitment"
-                                                options={timeOptions}
-                                                selected={timeFilter}
-                                                onChange={setTimeFilter}
-                                            />
+                                        {timeMax > 0 && (
+                                            <div className="mb-4">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-sm font-medium text-nord-5">Time / week (hrs)</label>
+                                                    {(timeRange[0] > 0 || timeRange[1] < timeMax) && (
+                                                        <button onClick={() => setTimeRange([0, timeMax])} className="text-xs text-nord-8 hover:underline">Reset</button>
+                                                    )}
+                                                </div>
+                                                <RangeSlider
+                                                    min={0} max={timeMax}
+                                                    value={timeRange}
+                                                    onChange={setTimeRange}
+                                                    formatValue={v => v === 0 ? '0' : `${v} hrs`}
+                                                />
+                                            </div>
                                         )}
 
                                         <div className="mb-4">
@@ -850,7 +988,7 @@
                                     ) : (
                                         <div>
                                             {filtered.map((item, idx) => (
-                                                <ResourceCard key={idx} item={item} />
+                                                <ResourceCard key={idx} item={item} siblings={siblingsMap[item.ID] || []} />
                                             ))}
                                         </div>
                                     )}
