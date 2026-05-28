@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Safety Navigator</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/png" href="favicon-64.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        nord: {
+                            0: '#2E3440',
+                            1: '#3B4252',
+                            2: '#434C5E',
+                            3: '#4C566A',
+                            4: '#D8DEE9',
+                            5: '#E5E9F0',
+                            6: '#ECEFF4',
+                            7: '#8FBCBB',
+                            8: '#88C0D0',
+                            9: '#81A1C1',
+                            10: '#5E81AC',
+                            11: '#BF616A',
+                            12: '#D08770',
+                            13: '#EBCB8B',
+                            14: '#A3BE8C',
+                            15: '#B48EAD',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --pop-1:       #5EE6D8;
+            --pop-2:       #36C5C0;
+            --frost-1:     #8FBCBB;
+            --nord-fg-2:   #E5E9F0;
+            --nord-fg-dim: #D8DEE9;
+            --nord-muted:  #8a93a4;
+        }
+        body { background: radial-gradient(ellipse at 50% 30%, #353c4a 0%, #2E3440 55%, #262b35 100%); background-attachment: fixed; }
+        input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; pointer-events: none; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background-color: #88C0D0; pointer-events: all; cursor: pointer; margin-top: -7px; border: 2px solid #3B4252; }
+        input[type=range]::-moz-range-thumb { height: 18px; width: 18px; border-radius: 50%; background-color: #88C0D0; pointer-events: all; cursor: pointer; border: 2px solid #3B4252; box-shadow: none; }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: transparent; }
+        input[type=range]::-moz-range-track { height: 4px; background: transparent; }
+    </style>
+</head>
+<body class="min-h-screen text-nord-4">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/1wrgVNPTMlwagr33sTPv-Ukadx14MBKXauUY1BEBnbBo/export?format=csv&gid=0';
+
+        const CAREER_STAGE_MAP = {
+            'Student': 'for_student',
+            'Early career (0-3 yrs)': 'for_early_career',
+            'Mid-career (3-10 yrs)': 'for_mid_career',
+            'Senior (10+ yrs)': 'for_senior',
+        };
+
+        // Parse CSV text into array of objects
+        function parseCSV(text) {
+            const lines = text.split('\n');
+            if (lines.length === 0) return [];
+            const headers = parseCSVLine(lines[0]);
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                if (lines[i].trim() === '') continue;
+                const values = parseCSVLine(lines[i]);
+                const row = {};
+                headers.forEach((header, idx) => {
+                    row[header.trim()] = values[idx] || '';
+                });
+                data.push(row);
+            }
+            return data;
+        }
+
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    if (inQuotes && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current.trim());
+            return result;
+        }
+
+        function fmtDuration(val) {
+            const w = parseInt(val, 10);
+            if (isNaN(w)) return val;
+            return w === 1 ? '1 week' : `${w} weeks`;
+        }
+
+        function fmtTime(val) {
+            const h = parseInt(val, 10);
+            if (isNaN(h)) return val;
+            return `${h} hrs/wk`;
+        }
+
+        // Strip trailing variant letter only when directly preceded by a digit (e.g. aisdb_001a → aisdb_001)
+        function getBaseId(id) {
+            if (!id) return id;
+            return id.replace(/(\d)[a-z]$/, '$1');
+        }
+
+        // Fields compared between variants to surface differences
+        const COMPARE_FIELDS = [
+            { key: 'format', label: 'Format' },
+            { key: 'duration', label: 'Duration', fmt: fmtDuration },
+            { key: 'time_commitment', label: 'Time/week', fmt: fmtTime },
+            { key: 'pacing', label: 'Pacing' },
+            { key: 'track', label: 'Track' },
+            { key: 'geographic_focus', label: 'Geographic focus' },
+            { key: 'cost', label: 'Cost' },
+            { key: 'recompensation', label: 'Compensation' },
+            { key: 'prerequisites', label: 'Prerequisites' },
+            { key: 'for_student', label: 'For students', isBool: true },
+            { key: 'for_early_career', label: 'For early career', isBool: true },
+            { key: 'for_mid_career', label: 'For mid-career', isBool: true },
+            { key: 'for_senior', label: 'For senior', isBool: true },
+            { key: 'for_career_switch', label: 'For career switchers', isBool: true },
+        ];
+
+        function computeDiffs(itemA, itemB) {
+            return COMPARE_FIELDS
+                .filter(f => (itemA[f.key] || '') !== (itemB[f.key] || ''))
+                .map(f => {
+                    const fmt = f.isBool
+                        ? (v => v === '1' ? 'Yes' : 'No')
+                        : (f.fmt || (v => v || '—'));
+                    return `${f.label}: ${fmt(itemB[f.key])}`;
+                });
+        }
+
+        function BrandMark({ size = 28, color = 'var(--pop-1)' }) {
+            return (
+                <svg width={size} height={size} viewBox="0 0 32 32" style={{ display: 'block' }}>
+                    <circle cx="16" cy="16" r="13" fill="none" stroke={color} strokeWidth="1.5" opacity="0.55" />
+                    <circle cx="16" cy="16" r="7" fill="none" stroke={color} strokeWidth="1.5" />
+                    <line x1="16" y1="2" x2="16" y2="6" stroke={color} strokeWidth="1.5" />
+                    <line x1="16" y1="26" x2="16" y2="30" stroke={color} strokeWidth="1.5" />
+                    <line x1="2" y1="16" x2="6" y2="16" stroke={color} strokeWidth="1.5" />
+                    <line x1="26" y1="16" x2="30" y2="16" stroke={color} strokeWidth="1.5" />
+                    <circle cx="20.5" cy="11.5" r="2" fill={color} />
+                </svg>
+            );
+        }
+
+        function BrandLockup() {
+            return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <BrandMark />
+                    <span style={{ fontFamily: 'Inter, sans-serif', fontWeight: 600, fontSize: 16, letterSpacing: 0.2, color: 'var(--nord-fg-2)' }}>
+                        AI Safety Navigator
+                    </span>
+                </div>
+            );
+        }
+
+        // Track badge component
+        function TrackBadge({ track }) {
+            if (!track || track === 'Neutral') return null;
+            const colors = {
+                'Technical': 'bg-[#B48EAD] text-nord-0',
+                'Governance': 'bg-[#EBCB8B] text-nord-0',
+                'Both': 'bg-[#81A1C1] text-nord-0',
+                'General': 'bg-nord-3 text-nord-4'
+            };
+            return (
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${colors[track] || colors['General']}`}>
+                    {track}
+                </span>
+            );
+        }
+
+        // Resource card component
+        function ResourceCard({ item, siblings }) {
+            const [expanded, setExpanded] = useState(false);
+
+            return (
+                <div className="bg-nord-1 rounded-lg border border-nord-2 p-4 mb-3">
+                    <div className="cursor-pointer" onClick={() => setExpanded(!expanded)}>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <h3 className="font-semibold text-nord-6">{item.name}</h3>
+                                    <TrackBadge track={item.track} />
+                                    {siblings && siblings.length > 0 && (
+                                        <span className="text-xs text-nord-4 border border-nord-3 px-2 py-0.5 rounded-full">
+                                            {siblings.length + 1} variants
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-sm text-nord-4 mt-1">{item.organization}</p>
+                            </div>
+                            <div className="text-right text-sm text-nord-4">
+                                <div>{item.format}</div>
+                                <div>{fmtDuration(item.duration)}</div>
+                                <div>{fmtTime(item.time_commitment)}</div>
+                            </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between">
+                            <span className="text-sm font-medium text-nord-8 hover:text-nord-7">
+                                {expanded ? '▲ Hide details' : '▼ More info'}
+                            </span>
+                            {item.url && item.url !== '[unclear]' ? (
+                                <a
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-nord-8 hover:text-nord-7 hover:underline font-medium"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    Visit Program →
+                                </a>
+                            ) : (
+                                <span></span>
+                            )}
+                        </div>
+                    </div>
+
+                    {expanded && (
+                        <div className="mt-4 pt-4 border-t border-nord-2 space-y-3 text-sm">
+                            {item.description && (
+                                <div>
+                                    <span className="font-medium text-nord-5">Description: </span>
+                                    <span className="text-nord-4">{item.description}</span>
+                                </div>
+                            )}
+                            {(() => {
+                                const stages = Object.entries(CAREER_STAGE_MAP)
+                                    .filter(([, col]) => item[col] === '1')
+                                    .map(([name]) => name)
+                                    .join(', ');
+                                return stages ? (
+                                    <div>
+                                        <span className="font-medium text-nord-5">Career Stage: </span>
+                                        <span className="text-nord-4">{stages}</span>
+                                    </div>
+                                ) : null;
+                            })()}
+                            {item.geographic_focus && (
+                                <div>
+                                    <span className="font-medium text-nord-5">Geographic Focus: </span>
+                                    <span className="text-nord-4">{item.geographic_focus}</span>
+                                </div>
+                            )}
+                            {item.prerequisites && item.prerequisites !== 'None' && (
+                                <div>
+                                    <span className="font-medium text-nord-5">Prerequisites: </span>
+                                    <span className="text-nord-4">{item.prerequisites}</span>
+                                </div>
+                            )}
+                            {item.application_status && (
+                                <div>
+                                    <span className="font-medium text-nord-5">Application Status: </span>
+                                    <span className="text-nord-4">{item.application_status}</span>
+                                </div>
+                            )}
+                            {item.recompensation && item.recompensation !== '0' && item.recompensation !== '[unclear]' && (
+                                <div>
+                                    <span className="font-medium text-nord-5">Compensation: </span>
+                                    <span className="text-nord-4">{item.recompensation}</span>
+                                </div>
+                            )}
+                            {item.url && item.url !== '[unclear]' && (
+                                <div>
+                                    <a
+                                        href={item.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-nord-8 hover:text-nord-7 hover:underline"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        Visit Program →
+                                    </a>
+                                </div>
+                            )}
+                            {siblings && siblings.length > 0 && (
+                                <div className="mt-3 p-3 bg-nord-0 rounded-lg border border-nord-3">
+                                    <p className="font-medium text-nord-5 text-sm mb-2">
+                                        {siblings.length === 1 ? 'Related variant:' : 'Related variants:'}
+                                    </p>
+                                    {siblings.map(sibling => {
+                                        const diffs = computeDiffs(item, sibling);
+                                        return (
+                                            <div key={sibling.ID} className="mb-2 last:mb-0">
+                                                <span className="text-nord-6 text-sm font-medium">{sibling.name}</span>
+                                                {diffs.length > 0 && (
+                                                    <p className="text-xs text-nord-4 mt-0.5">
+                                                        Differs in: {diffs.join(' · ')}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // Filter section component (multi-select pills)
+        function FilterSection({ label, options, selected, onChange }) {
+            const toggleOption = (option) => {
+                if (selected.includes(option)) {
+                    onChange(selected.filter(s => s !== option));
+                } else {
+                    onChange([...selected, option]);
+                }
+            };
+
+            return (
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-nord-5 mb-2">{label}</label>
+                    <div className="flex flex-wrap gap-2">
+                        {options.map(option => (
+                            <button
+                                key={option}
+                                onClick={() => toggleOption(option)}
+                                className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                                    selected.includes(option)
+                                        ? 'bg-nord-8 text-nord-0'
+                                        : 'bg-nord-2 text-nord-4 hover:bg-nord-3'
+                                }`}
+                            >
+                                {option}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // Dual-handle range slider
+        function RangeSlider({ min, max, value, onChange, formatValue }) {
+            const [lo, hi] = value;
+            const loPercent = max > min ? ((lo - min) / (max - min)) * 100 : 0;
+            const hiPercent = max > min ? ((hi - min) / (max - min)) * 100 : 100;
+
+            return (
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-nord-4 shrink-0 w-16 text-right">{formatValue(lo)}</span>
+                    <div className="relative h-5 flex items-center flex-1">
+                        <div className="absolute w-full h-1 bg-nord-3 rounded-full"></div>
+                        <div
+                            className="absolute h-1 bg-nord-8 rounded-full"
+                            style={{ left: `${loPercent}%`, right: `${100 - hiPercent}%` }}
+                        ></div>
+                        <input
+                            type="range" min={min} max={max} value={lo}
+                            onChange={e => onChange([Math.min(+e.target.value, hi), hi])}
+                            className="absolute w-full"
+                        />
+                        <input
+                            type="range" min={min} max={max} value={hi}
+                            onChange={e => onChange([lo, Math.max(+e.target.value, lo)])}
+                            className="absolute w-full"
+                        />
+                    </div>
+                    <span className="text-xs text-nord-4 shrink-0 w-20">{formatValue(hi)}</span>
+                </div>
+            );
+        }
+
+        // Single question component (used within groups)
+        function QuestionBlock({ question, options, selected, onSelect, onClear, isMulti = true, showNoPreference = true }) {
+            const hasSelection = isMulti ? selected.length > 0 : selected !== null;
+
+            return (
+                <div className="mb-8">
+                    <h3 className="text-xl font-bold text-nord-6 mb-4">{question}</h3>
+                    <div className="flex flex-wrap justify-center items-center gap-3">
+                        {options.map(option => {
+                            const isSelected = isMulti ? selected.includes(option) : selected === option;
+                            return (
+                                <button
+                                    key={option}
+                                    onClick={() => onSelect(option)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                        isSelected
+                                            ? 'bg-nord-8 text-nord-0 shadow-md scale-105'
+                                            : 'bg-nord-1 text-nord-4 border border-nord-3 hover:border-nord-8 hover:shadow'
+                                    }`}
+                                >
+                                    {option}
+                                </button>
+                            );
+                        })}
+                        {showNoPreference && (
+                            <>
+                                <div className="w-px h-8 bg-nord-3 mx-1"></div>
+                                <button
+                                    onClick={onClear}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                        !hasSelection
+                                            ? 'bg-nord-8 text-nord-0 shadow-md scale-105'
+                                            : 'bg-nord-1 text-nord-4 border border-nord-3 hover:border-nord-8 hover:shadow'
+                                    }`}
+                                >
+                                    No preference
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Range slider question for the questionnaire
+        function RangeSliderQuestion({ question, min, max, range, onChange, formatValue }) {
+            if (!range || max === 0) return null;
+            const isAtDefault = range[0] === min && range[1] === max;
+            return (
+                <div className="mb-8">
+                    <h3 className="text-xl font-bold text-nord-6 mb-6">{question}</h3>
+                    <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                            <RangeSlider min={min} max={max} value={range} onChange={onChange} formatValue={formatValue} />
+                        </div>
+                        <div className="w-px h-8 bg-nord-3 shrink-0"></div>
+                        <button
+                            onClick={() => onChange([min, max])}
+                            className={`shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                                isAtDefault
+                                    ? 'bg-nord-8 text-nord-0 shadow-md scale-105'
+                                    : 'bg-nord-1 text-nord-4 border border-nord-3 hover:border-nord-8 hover:shadow'
+                            }`}
+                        >
+                            No preference
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // Grouped questionnaire step component
+        function QuestionGroupStep({ questions, onSelectFor, onClearFor, onNext, onBack, canGoBack, matchCount, totalCount }) {
+            return (
+                <div className="max-w-2xl mx-auto text-center">
+                    {questions.map((q, idx) => (
+                        q.isRangeSlider ? (
+                            <RangeSliderQuestion
+                                key={idx}
+                                question={q.question}
+                                min={q.sliderMin}
+                                max={q.sliderMax}
+                                range={q.filter}
+                                onChange={q.setFilter}
+                                formatValue={q.formatValue}
+                            />
+                        ) : (
+                            <QuestionBlock
+                                key={idx}
+                                question={q.question}
+                                options={q.options}
+                                selected={q.filter}
+                                onSelect={(option) => onSelectFor(idx, option)}
+                                onClear={() => onClearFor(idx)}
+                                isMulti={q.isMulti}
+                                showNoPreference={q.showNoPreference !== false}
+                            />
+                        )
+                    ))}
+                    <p className="text-nord-4 mb-4">
+                        <span className="font-semibold text-nord-6">{matchCount}</span> of {totalCount} programs match
+                    </p>
+                    <div className="flex justify-center gap-4 mt-8">
+                        {canGoBack && (
+                            <button
+                                onClick={onBack}
+                                className="px-6 py-2 bg-nord-1 text-nord-4 border border-nord-3 rounded-lg hover:bg-nord-2 transition-colors"
+                            >
+                                ← Back
+                            </button>
+                        )}
+                        <button
+                            onClick={onNext}
+                            className="px-6 py-2 bg-nord-8 text-nord-0 rounded-lg hover:bg-nord-9 transition-colors"
+                        >
+                            Next →
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // Main App component
+        function App() {
+            const [data, setData] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            // Questionnaire state
+            const [showQuestionnaire, setShowQuestionnaire] = useState(true);
+            const [currentQuestion, setCurrentQuestion] = useState(0);
+
+            // Filter states
+            const [trackFilter, setTrackFilter] = useState([]);
+            const [careerStageFilter, setCareerStageFilter] = useState([]);
+            const [formatFilter, setFormatFilter] = useState([]);
+            const [programTypeFilter, setProgramTypeFilter] = useState([]);
+            const [durationRange, setDurationRange] = useState([0, 0]);
+            const [timeRange, setTimeRange] = useState([0, 0]);
+            const [geographicFilter, setGeographicFilter] = useState([]);
+            const [applicationStatusFilter, setApplicationStatusFilter] = useState([]);
+            const [applicationStatusSelection, setApplicationStatusSelection] = useState(null);
+            const [careerSwitchFilter, setCareerSwitchFilter] = useState(false);
+            const [careerSwitchSelection, setCareerSwitchSelection] = useState(null);
+
+            // Fetch data on mount
+            useEffect(() => {
+                fetch(CSV_URL)
+                    .then(res => res.text())
+                    .then(text => {
+                        const parsed = parseCSV(text);
+                        setData(parsed);
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        setError(err.message);
+                        setLoading(false);
+                    });
+            }, []);
+
+            // Map each item ID to its variant siblings (items sharing the same base ID)
+            const siblingsMap = useMemo(() => {
+                const byBase = {};
+                data.forEach(item => {
+                    const base = getBaseId(item.ID);
+                    if (!byBase[base]) byBase[base] = [];
+                    byBase[base].push(item);
+                });
+                const map = {};
+                data.forEach(item => {
+                    const base = getBaseId(item.ID);
+                    const group = byBase[base];
+                    if (group.length > 1) {
+                        map[item.ID] = group.filter(s => s.ID !== item.ID);
+                    }
+                });
+                return map;
+            }, [data]);
+
+            // Extract unique options from data
+            const trackOptions = useMemo(() =>
+                [...new Set(data.map(d => d.track).filter(Boolean))], [data]);
+            const careerStageOptions = useMemo(() =>
+                Object.keys(CAREER_STAGE_MAP).filter(stage =>
+                    data.some(d => d[CAREER_STAGE_MAP[stage]] === '1')
+                ), [data]);
+            const formatOptions = useMemo(() =>
+                [...new Set(data.map(d => d.format).filter(Boolean))], [data]);
+            const programTypeOptions = useMemo(() =>
+                [...new Set(data.map(d => d.program_type).filter(Boolean))], [data]);
+            const geographicOptions = useMemo(() =>
+                [...new Set(data.map(d => d.geographic_focus).filter(Boolean))], [data]);
+            const applicationStatusOptions = useMemo(() =>
+                [...new Set(data.map(d => d.application_status).filter(Boolean))], [data]);
+
+            const durationMax = useMemo(() => {
+                const vals = data.map(d => parseInt(d.duration, 10)).filter(v => !isNaN(v));
+                return vals.length ? Math.max(...vals) : 0;
+            }, [data]);
+            const timeMax = useMemo(() => {
+                const vals = data.map(d => parseInt(d.time_commitment, 10)).filter(v => !isNaN(v));
+                return vals.length ? Math.max(...vals) : 0;
+            }, [data]);
+
+            // Initialize slider ranges once data loads
+            useEffect(() => { if (durationMax > 0) setDurationRange([0, durationMax]); }, [durationMax]);
+            useEffect(() => { if (timeMax > 0) setTimeRange([0, timeMax]); }, [timeMax]);
+
+            // Questionnaire question groups
+            const questionGroups = [
+                // Group 1: Track + Geographic Focus
+                [
+                    {
+                        question: "What track are you interested in?",
+                        options: trackOptions,
+                        filter: trackFilter,
+                        setFilter: setTrackFilter,
+                        isMulti: true,
+                    },
+                    {
+                        question: "What's your geographic preference?",
+                        options: geographicOptions,
+                        filter: geographicFilter,
+                        setFilter: setGeographicFilter,
+                        isMulti: true,
+                    }
+                ],
+                // Group 2: Career stage + Career switch
+                [
+                    {
+                        question: "What's your career stage?",
+                        options: careerStageOptions,
+                        filter: careerStageFilter,
+                        setFilter: setCareerStageFilter,
+                        isMulti: true,
+                        showNoPreference: false
+                    },
+                    {
+                        question: "Are you switching careers into AI safety from another field?",
+                        options: ['Yes', 'No'],
+                        filter: careerSwitchSelection,
+                        setFilter: (val) => {
+                            setCareerSwitchSelection(val);
+                            setCareerSwitchFilter(val === 'Yes');
+                        },
+                        isMulti: false,
+                        showNoPreference: false
+                    }
+                ],
+                // Group 3: Format + Application status
+                [
+                    {
+                        question: "What format do you prefer?",
+                        options: formatOptions,
+                        filter: formatFilter,
+                        setFilter: setFormatFilter,
+                        isMulti: true,
+                    },
+                    {
+                        question: "Show only programs that start soon?",
+                        options: ['Yes', 'No'],
+                        filter: applicationStatusSelection,
+                        setFilter: (val) => {
+                            setApplicationStatusSelection(val);
+                            setApplicationStatusFilter(val === 'Yes' ? ['open', 'rolling'] : []);
+                        },
+                        isMulti: false,
+                    }
+                ],
+                // Group 4: Time commitment + Duration (range sliders)
+                [
+                    {
+                        question: "How much time can you commit per week?",
+                        isRangeSlider: true,
+                        filter: timeRange,
+                        setFilter: setTimeRange,
+                        sliderMin: 0,
+                        sliderMax: timeMax,
+                        formatValue: (v) => v === 0 ? '0' : `${v} hrs/wk`,
+                    },
+                    {
+                        question: "How long should the program take?",
+                        isRangeSlider: true,
+                        filter: durationRange,
+                        setFilter: setDurationRange,
+                        sliderMin: 0,
+                        sliderMax: durationMax,
+                        formatValue: (v) => v === 0 ? '0' : v === 1 ? '1 week' : `${v} weeks`,
+                    }
+                ]
+            ];
+
+            // Filter out groups where all questions have no options / zero max
+            const activeGroups = questionGroups.map(group =>
+                group.filter(q => q.isRangeSlider ? q.sliderMax > 0 : q.options.length > 0)
+            ).filter(group => group.length > 0);
+
+            // Filter logic
+            const filtered = useMemo(() => {
+                return data.filter(item => {
+                    if (trackFilter.length > 0) {
+                        const itemTrack = item.track || '';
+                        const matches = trackFilter.some(t =>
+                            itemTrack === t ||
+                            ((itemTrack === 'Both' || itemTrack === 'Neutral') && (t === 'Technical' || t === 'Governance'))
+                        );
+                        if (!matches) return false;
+                    }
+
+                    if (careerStageFilter.length > 0) {
+                        const matches = careerStageFilter.some(stage =>
+                            item[CAREER_STAGE_MAP[stage]] === '1'
+                        );
+                        if (!matches) return false;
+                    }
+
+                    if (formatFilter.length > 0) {
+                        if (!formatFilter.includes(item.format)) return false;
+                    }
+
+                    if (programTypeFilter.length > 0) {
+                        if (!programTypeFilter.includes(item.program_type)) return false;
+                    }
+
+                    if (durationMax > 0 && (durationRange[0] > 0 || durationRange[1] < durationMax)) {
+                        const w = parseInt(item.duration, 10);
+                        if (isNaN(w) || w < durationRange[0] || w > durationRange[1]) return false;
+                    }
+
+                    if (timeMax > 0 && (timeRange[0] > 0 || timeRange[1] < timeMax)) {
+                        const h = parseInt(item.time_commitment, 10);
+                        if (isNaN(h) || h < timeRange[0] || h > timeRange[1]) return false;
+                    }
+
+                    if (geographicFilter.length > 0) {
+                        const itemGeo = item.geographic_focus || '';
+                        // Global items always show, or match selected filters
+                        if (itemGeo !== 'Global' && !geographicFilter.includes(itemGeo)) return false;
+                    }
+
+                    if (applicationStatusFilter.length > 0) {
+                        if (!applicationStatusFilter.includes(item.application_status)) return false;
+                    }
+
+                    if (careerSwitchFilter) {
+                        if (item.for_career_switch !== '1') return false;
+                    }
+
+                    return true;
+                });
+            }, [data, trackFilter, careerStageFilter, formatFilter, programTypeFilter, durationRange, timeRange, durationMax, timeMax, geographicFilter, applicationStatusFilter, careerSwitchFilter]);
+
+            const clearFilters = () => {
+                setTrackFilter([]);
+                setCareerStageFilter([]);
+                setFormatFilter([]);
+                setProgramTypeFilter([]);
+                setDurationRange([0, durationMax]);
+                setTimeRange([0, timeMax]);
+                setGeographicFilter([]);
+                setApplicationStatusFilter([]);
+                setApplicationStatusSelection(null);
+                setCareerSwitchFilter(false);
+                setCareerSwitchSelection(null);
+            };
+
+            const hasActiveFilters = trackFilter.length > 0 || careerStageFilter.length > 0 ||
+                formatFilter.length > 0 || programTypeFilter.length > 0 ||
+                (durationMax > 0 && (durationRange[0] > 0 || durationRange[1] < durationMax)) ||
+                (timeMax > 0 && (timeRange[0] > 0 || timeRange[1] < timeMax)) ||
+                geographicFilter.length > 0 || applicationStatusFilter.length > 0 || careerSwitchFilter;
+
+            const handleQuestionSelect = (questionIdx, option) => {
+                const q = activeGroups[currentQuestion][questionIdx];
+                if (q.isMulti) {
+                    if (q.filter.includes(option)) {
+                        q.setFilter(q.filter.filter(f => f !== option));
+                    } else {
+                        q.setFilter([...q.filter, option]);
+                    }
+                } else {
+                    q.setFilter(q.filter === option ? null : option);
+                }
+            };
+
+            const handleQuestionClear = (questionIdx) => {
+                const q = activeGroups[currentQuestion][questionIdx];
+                q.setFilter(q.isMulti ? [] : null);
+            };
+
+            const handleNext = () => {
+                if (currentQuestion < activeGroups.length - 1) {
+                    setCurrentQuestion(currentQuestion + 1);
+                } else {
+                    setShowQuestionnaire(false);
+                }
+            };
+
+            const handleBack = () => {
+                if (currentQuestion > 0) {
+                    setCurrentQuestion(currentQuestion - 1);
+                }
+            };
+
+            const handleShowAll = () => {
+                clearFilters();
+                setShowQuestionnaire(false);
+            };
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-nord-8 mx-auto mb-4"></div>
+                            <p className="text-nord-4">Loading resources...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center">
+                        <div className="text-center text-nord-11">
+                            <p className="text-xl mb-2">Failed to load data</p>
+                            <p className="text-sm">{error}</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen">
+                    {/* Header */}
+                    <nav style={{
+                        display: 'grid', gridTemplateColumns: '1fr auto 1fr',
+                        alignItems: 'center', padding: '24px 48px',
+                        borderBottom: '1px solid rgba(143, 188, 187, 0.1)',
+                    }}>
+                        <div style={{ justifySelf: 'start' }}>
+                            <a href="index.html" style={{ textDecoration: 'none' }}><BrandLockup /></a>
+                        </div>
+                        <div style={{ justifySelf: 'center', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase', color: 'var(--nord-muted)' }}>
+                            Updated weekly
+                        </div>
+                        <div style={{ justifySelf: 'end', display: 'flex', alignItems: 'center', gap: 28 }}>
+                            {['About', 'Contact'].map(label => (
+                                <a key={label} href={label === 'Contact' ? 'contact.html' : '#'} style={{ color: 'var(--nord-fg-dim)', fontFamily: 'Inter, sans-serif', fontSize: 14, opacity: 0.75, textDecoration: 'none' }}>{label}</a>
+                            ))}
+                        </div>
+                    </nav>
+
+                    {/* Questionnaire or Main Content */}
+                    {showQuestionnaire ? (
+                        <div className="max-w-4xl mx-auto px-4 pt-12 pb-32">
+                            <div className="mb-8 text-center">
+                                <p className="text-nord-4 mb-4">
+                                    Step {currentQuestion + 1} of {activeGroups.length}
+                                </p>
+                                <div className="flex justify-center gap-2 mb-8">
+                                    {activeGroups.map((_, idx) => (
+                                        <div
+                                            key={idx}
+                                            className={`h-2 w-12 rounded-full ${
+                                                idx <= currentQuestion ? 'bg-nord-8' : 'bg-nord-2'
+                                            }`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
+                            {activeGroups[currentQuestion] && (
+                                <QuestionGroupStep
+                                    questions={activeGroups[currentQuestion]}
+                                    onSelectFor={handleQuestionSelect}
+                                    onClearFor={handleQuestionClear}
+                                    onNext={handleNext}
+                                    onBack={handleBack}
+                                    canGoBack={currentQuestion > 0}
+                                    matchCount={filtered.length}
+                                    totalCount={data.length}
+                                />
+                            )}
+
+                            <div className="text-center mt-16 pt-8 border-t border-nord-2">
+                                <button
+                                    onClick={handleShowAll}
+                                    className="px-6 py-2 bg-nord-3 text-nord-5 rounded-lg hover:bg-nord-2 transition-colors"
+                                >
+                                    Show me all resources
+                                </button>
+                                <p className="mt-3 text-sm text-nord-4">
+                                    Skip the questions and go to the filterable list of all resources
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="max-w-6xl mx-auto px-4 py-6">
+                            <div className="lg:flex lg:gap-6">
+                                {/* Filters sidebar */}
+                                <aside className="lg:w-72 flex-shrink-0 mb-6 lg:mb-0">
+                                    <div className="bg-nord-1 rounded-lg border border-nord-2 p-4 lg:sticky lg:top-4">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h2 className="font-semibold text-nord-6">Filters</h2>
+                                            {hasActiveFilters && (
+                                                <button
+                                                    onClick={clearFilters}
+                                                    className="text-sm text-nord-8 hover:underline"
+                                                >
+                                                    Clear all
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        <FilterSection
+                                            label="Track"
+                                            options={trackOptions}
+                                            selected={trackFilter}
+                                            onChange={setTrackFilter}
+                                        />
+
+                                        <FilterSection
+                                            label="Career Stage"
+                                            options={careerStageOptions}
+                                            selected={careerStageFilter}
+                                            onChange={setCareerStageFilter}
+                                        />
+
+                                        <FilterSection
+                                            label="Format"
+                                            options={formatOptions}
+                                            selected={formatFilter}
+                                            onChange={setFormatFilter}
+                                        />
+
+                                        <FilterSection
+                                            label="Program Type"
+                                            options={programTypeOptions}
+                                            selected={programTypeFilter}
+                                            onChange={setProgramTypeFilter}
+                                        />
+
+                                        <FilterSection
+                                            label="Geographic Focus"
+                                            options={geographicOptions}
+                                            selected={geographicFilter}
+                                            onChange={setGeographicFilter}
+                                        />
+
+                                        <FilterSection
+                                            label="Application Status"
+                                            options={applicationStatusOptions}
+                                            selected={applicationStatusFilter}
+                                            onChange={setApplicationStatusFilter}
+                                        />
+
+                                        {durationMax > 0 && (
+                                            <div className="mb-4">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-sm font-medium text-nord-5">Duration (weeks)</label>
+                                                    {(durationRange[0] > 0 || durationRange[1] < durationMax) && (
+                                                        <button onClick={() => setDurationRange([0, durationMax])} className="text-xs text-nord-8 hover:underline">Reset</button>
+                                                    )}
+                                                </div>
+                                                <RangeSlider
+                                                    min={0} max={durationMax}
+                                                    value={durationRange}
+                                                    onChange={setDurationRange}
+                                                    formatValue={v => v === 0 ? '0' : v === 1 ? '1 wk' : `${v} wks`}
+                                                />
+                                            </div>
+                                        )}
+
+                                        {timeMax > 0 && (
+                                            <div className="mb-4">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <label className="text-sm font-medium text-nord-5">Time / week (hrs)</label>
+                                                    {(timeRange[0] > 0 || timeRange[1] < timeMax) && (
+                                                        <button onClick={() => setTimeRange([0, timeMax])} className="text-xs text-nord-8 hover:underline">Reset</button>
+                                                    )}
+                                                </div>
+                                                <RangeSlider
+                                                    min={0} max={timeMax}
+                                                    value={timeRange}
+                                                    onChange={setTimeRange}
+                                                    formatValue={v => v === 0 ? '0' : `${v} hrs`}
+                                                />
+                                            </div>
+                                        )}
+
+                                        <div className="mb-4">
+                                            <label className="flex items-center gap-2 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={careerSwitchFilter}
+                                                    onChange={(e) => setCareerSwitchFilter(e.target.checked)}
+                                                    className="w-4 h-4 rounded border-nord-3 bg-nord-2 text-nord-14 focus:ring-nord-14"
+                                                />
+                                                <span className="text-sm text-nord-4">Programs for career switchers</span>
+                                            </label>
+                                        </div>
+
+                                        <button
+                                            onClick={() => {
+                                                setShowQuestionnaire(true);
+                                                setCurrentQuestion(0);
+                                            }}
+                                            className="w-full mt-2 px-4 py-2 text-sm text-nord-4 bg-nord-2 rounded-lg hover:bg-nord-3 transition-colors"
+                                        >
+                                            ← Back to questionnaire
+                                        </button>
+                                    </div>
+                                </aside>
+
+                                {/* Results */}
+                                <main className="flex-1">
+                                    <div className="mb-4 flex items-center justify-between">
+                                        <p className="text-nord-4">
+                                            Showing <span className="font-semibold text-nord-6">{filtered.length}</span> of {data.length} resources
+                                        </p>
+                                    </div>
+
+                                    {filtered.length === 0 ? (
+                                        <div className="bg-nord-1 rounded-lg border border-nord-2 p-8 text-center">
+                                            <p className="text-nord-4 mb-4">No resources match your filters.</p>
+                                            <button
+                                                onClick={clearFilters}
+                                                className="text-nord-8 hover:underline"
+                                            >
+                                                Clear all filters
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            {filtered.map((item, idx) => (
+                                                <ResourceCard key={idx} item={item} siblings={siblingsMap[item.ID] || []} />
+                                            ))}
+                                        </div>
+                                    )}
+                                </main>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Footer */}
+                    <footer style={{
+                        ...(showQuestionnaire
+                            ? { position: 'fixed', bottom: 0, left: 0, right: 0, background: '#262b35' }
+                            : { marginTop: 48 }),
+                        padding: '20px 48px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        borderTop: '1px dashed rgba(143, 188, 187, 0.18)',
+                        color: 'var(--nord-muted)', fontFamily: 'JetBrains Mono, monospace',
+                        fontSize: 11, letterSpacing: 1, textTransform: 'uppercase',
+                    }}>
+                        <span>
+                            Data may not be fully up to date. Something missing or incorrect?{' '}
+                            <a href="#" style={{ color: 'inherit', textDecoration: 'underline' }}>Let us know</a>.
+                        </span>
+                        <a href="https://safeaigermany.org/incubator" target="_blank" rel="noopener noreferrer" style={{ opacity: 0.7, color: 'inherit', textDecoration: 'none' }}>
+                            maintained by saige incubator · 2026
+                        </a>
+                    </footer>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
