@@ -35,10 +35,14 @@ This architecture was chosen for:
 ```
 ais-tree/
 ├── public/
-│   ├── index.html      # Everything - HTML, CSS, React app
-│   └── favicon-64.png
-├── wrangler.jsonc      # Cloudflare Workers config
-└── CLAUDE.md           # This file
+│   ├── index.html       # Landing page (hero, brand lockup, CTA → navigator)
+│   ├── navigator.html   # Navigator app — filterable directory (React + Tailwind)
+│   ├── contact.html     # Contact page (feedback form + hosting enquiries)
+│   ├── favicon.svg      # Brand mark SVG favicon (teal compass on dark bg)
+│   └── favicon-64.png   # PNG favicon fallback
+├── resource_dump/       # Design source files / scratch assets
+├── wrangler.jsonc       # Cloudflare Workers config
+└── CLAUDE.md            # This file
 ```
 
 ## Running Locally
@@ -46,7 +50,8 @@ ais-tree/
 ```bash
 cd ais-tree/public
 python3 -m http.server 8000
-# Open http://localhost:8000
+# Open http://localhost:8000          ← landing page
+# Open http://localhost:8000/navigator.html
 ```
 
 The local server is required because the Google Sheets fetch won't work with `file://` protocol (CORS).
