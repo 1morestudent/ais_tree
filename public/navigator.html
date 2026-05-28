@@ -241,7 +241,7 @@
                             </div>
                         </div>
                         <div className="mt-3 flex items-center justify-between">
-                            <span className="text-sm font-medium text-nord-8 hover:text-nord-7">
+                            <span className="text-sm font-medium" style={{ color: 'var(--pop-2)' }}>
                                 {expanded ? '▲ Hide details' : '▼ More info'}
                             </span>
                             {item.url && item.url !== '[unclear]' ? (
@@ -249,10 +249,17 @@
                                     href={item.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-sm text-nord-8 hover:text-nord-7 hover:underline font-medium"
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                                        color: 'var(--pop-2)', fontFamily: 'Inter, sans-serif',
+                                        fontWeight: 600, fontSize: 13, textDecoration: 'none',
+                                    }}
                                     onClick={(e) => e.stopPropagation()}
                                 >
-                                    Visit Program →
+                                    <span>Visit Program</span>
+                                    <svg width="13" height="13" viewBox="0 0 18 18" fill="none">
+                                        <path d="M3.5 9h11M10 4.5L14.5 9 10 13.5" stroke="#0d1f24" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                                    </svg>
                                 </a>
                             ) : (
                                 <span></span>
@@ -304,19 +311,6 @@
                                     <span className="text-nord-4">{item.recompensation}</span>
                                 </div>
                             )}
-                            {item.url && item.url !== '[unclear]' && (
-                                <div>
-                                    <a
-                                        href={item.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-nord-8 hover:text-nord-7 hover:underline"
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        Visit Program →
-                                    </a>
-                                </div>
-                            )}
                             {siblings && siblings.length > 0 && (
                                 <div className="mt-3 p-3 bg-nord-0 rounded-lg border border-nord-3">
                                     <p className="font-medium text-nord-5 text-sm mb-2">
@@ -326,7 +320,21 @@
                                         const diffs = computeDiffs(item, sibling);
                                         return (
                                             <div key={sibling.ID} className="mb-2 last:mb-0">
-                                                <span className="text-nord-6 text-sm font-medium">{sibling.name}</span>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-nord-6 text-sm font-medium">{sibling.name}</span>
+                                                    {sibling.url && sibling.url !== '[unclear]' && (
+                                                        <a
+                                                            href={sibling.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-sm font-medium shrink-0"
+                                                            style={{ color: 'var(--pop-2)' }}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            Visit Program →
+                                                        </a>
+                                                    )}
+                                                </div>
                                                 {diffs.length > 0 && (
                                                     <p className="text-xs text-nord-4 mt-0.5">
                                                         Differs in: {diffs.join(' · ')}
@@ -1117,7 +1125,7 @@
                         <span style={{ color: 'var(--frost-1)' }}>Last updated: {lastUpdated || '…'}</span>
                         <span>
                             Something missing or incorrect?{' '}
-                            <a href="contact.html" style={{ color: 'inherit', textDecoration: 'underline' }}>Let us know</a>.
+                            <a href="https://docs.google.com/forms/d/e/1FAIpQLSec2J3dmorKTdpdjSgLzxOAmLLUb6cMikCH3SPNbQNVemSwlg/viewform?usp=publish-editor" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>Let us know</a>.
                         </span>
                     </footer>
                 </div>
